@@ -1,0 +1,291 @@
+import datetime
+import json
+import os
+
+class Task:
+    """
+    Represents a task in the To-Do List.
+    """
+    def __init__(self, title, description="", due_date=None, priority="Medium", completed=False, category="General"):
+        self.title = title
+        self.description = description
+        self.due_date = due_date  # Store as datetime.date object
+        self.priority = priority
+        self.completed = completed
+        self.category = category
+
+    def __str__(self):
+        due_date_str = self.due_date.strftime("%Y-%m-%d") if self.due_date else "None"  # Format date for display
+        return (f"Task: {self.title}\n"
+                f"  Description: {self.description}\n"
+                f"  Due Date: {due_date_str}\n"
+                f"  Priority: {self.priority}\n"
+                f"  Completed: {self.completed}\n"
+                f"  Category: {self.category}")
+
+    def to_dict(self):
+        """
+        Converts the Task object to a dictionary for JSON serialization.
+        """
+        return {
+            "title": self.title,
+            "description": self.description,
+            "due_date": self.due_date.strftime("%Y-%m-%d") if self.due_date else None,  # Store date as string
+            "priority": self.priority,
+            "completed": self.completed,
+            "category": self.category
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        """
+        Creates a Task object from a dictionary (e.g., loaded from JSON).
+        """
+        due_date_str = data.get("due_date")
+        due_date = datetime.datetime.strptime(due_date_str, "%Y-%m-%d").date() if due_date_str else None  # Parse date string
+        return cls(
+            title=data["title"],
+            description=data.get("description", ""),
+            due_date=due_date,
+            priority=data.get("priority", "Medium"),
+            completed=data.get("completed", False),
+            category=data.get("category", "General")
+        )
+
+
+class ToDoList:
+    """
+    Manages a list of tasks.  Includes saving and loading from JSON.
+    """
+    def __init__(self, filename="tasks.json"):
+        self.tasks = []
+        self.filename = filename
+        self.load_tasks()
+
+    def add_task(self, task):
+        """Adds a task to the list."""
+        self.tasks.append(task)
+        self.save_tasks()
+
+    def remove_task(self, title):
+        """Removes a task by its title."""
+        for i, task in enumerate(self.tasks):
+            if task.title == title:
+                del self.tasks[i]
+                self.save_tasks()
+                return True
+        return False  # Task not found
+
+    def complete_task(self, title):
+        """Marks a task as completed by its title."""
+        for task in self.tasks:
+            if task.title == title:
+                task.completed = True
+                self.save_tasks()
+                return True
+        return False  # Task not found
+
+    def update_task(self, old_title, new_title=None, new_description=None, new_due_date=None, new_priority=None, new_category=None):
+        """Updates a task's details."""
+        for task in self.tasks:
+            if task.title == old_title:
+                if new_title:
+                    task.title = new_title
+                if new_description is not None:  # Allow clearing description
+                    task.description = new_description
+                if new_due_date is not None:
+                     task.due_date = new_due_date
+                if new_priority:
+                    task.priority = new_priority
+                if new_category:
+                    task.category = new_category
+                self.save_tasks()
+                return True
+        return False  # Task not found
+
+    def get_task(self, title):
+      """Retrieves a task by its title."""
+      for task in self.tasks:
+        if task.title == title:
+          return task
+      return None
+
+    def list_tasks(self, sort_by="due_date", filter_completed=None, filter_category=None):
+        """Lists tasks, optionally sorted and filtered."""
+        filtered_tasks = self.tasks
+
+        # Apply category filter
+        if filter_category:
+            filtered_tasks = [task for task in filtered_tasks if task.category == filter_category]
+
+        # Apply completed filter
+        if filter_completed is not None:  # Allow both True and False filtering
+            filtered_tasks = [task for task in filtered_tasks if task.completed == filter_completed]
+
+        # Sort the tasks
+        if sort_by == "due_date":
+            filtered_tasks.sort(key=lambda task: task.due_date if task.due_date else datetime.date.max) # Sort None dates to the end
+        elif sort_by == "priority":
+            priority_order = {"High": 1, "Medium": 2, "Low": 3}  # Define priority order
+            filtered_tasks.sort(key=lambda task: priority_order.get(task.priority, 2)) # Default to Medium if unknown
+
+        for task in filtered_tasks:
+            print(task)
+            print("-" * 20)
+
+
+    def save_tasks(self):
+        """Saves tasks to a JSON file."""
+        task_data = [task.to_dict() for task in self.tasks]
+        try:
+            with open(self.filename, "w") as f:
+                json.dump(task_data, f, indent=4)  # Indent for readability
+            print(f"Tasks saved to {self.filename}")
+        except Exception as e:
+            print(f"Error saving tasks: {e}")
+
+    def load_tasks(self):
+        """Loads tasks from a JSON file."""
+        if not os.path.exists(self.filename):
+            return # Don't try to load if file doesn't exist. Just start empty.
+
+        try:
+            with open(self.filename, "r") as f:
+                task_data = json.load(f)
+                self.tasks = [Task.from_dict(data) for data in task_data]
+            print(f"Tasks loaded from {self.filename}")
+        except FileNotFoundError:
+            print("No existing task file found. Starting with an empty list.")
+        except json.JSONDecodeError:
+            print("Error decoding JSON.  File might be corrupted. Starting with an empty list.")
+            self.tasks = []  # Reset task list to avoid errors if file is corrupted
+        except Exception as e:
+            print(f"Error loading tasks: {e}")
+
+
+# --- User Interface Functions ---
+
+def get_valid_date():
+    """Prompts the user for a date and validates the input."""
+    while True:
+        date_str = input("Enter due date (YYYY-MM-DD, or leave blank for none): ")
+        if not date_str:
+            return None
+        try:
+            return datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            print("Invalid date format. Please use YYYY-MM-DD.")
+
+def get_valid_priority():
+    """Prompts the user for a priority and validates the input."""
+    while True:
+        priority = input("Enter priority (High, Medium, Low): ").capitalize()
+        if priority in ["High", "Medium", "Low"]:
+            return priority
+        else:
+            print("Invalid priority. Please enter High, Medium, or Low.")
+
+
+def display_menu():
+    """Displays the main menu."""
+    print("\n--- To-Do List Menu ---")
+    print("1. Add Task")
+    print("2. Remove Task")
+    print("3. Complete Task")
+    print("4. Update Task")
+    print("5. List Tasks")
+    print("6. Get Task Details")
+    print("7. Save and Exit")
+
+
+def main():
+    """Main function to run the To-Do List application."""
+    todo_list = ToDoList()
+
+    while True:
+        display_menu()
+        choice = input("Enter your choice: ")
+
+        if choice == "1":  # Add Task
+            title = input("Enter task title: ")
+            description = input("Enter task description (optional): ")
+            due_date = get_valid_date()
+            priority = get_valid_priority()
+            category = input("Enter task category (optional, default: General): ") or "General"
+            task = Task(title, description, due_date, priority, category=category)
+            todo_list.add_task(task)
+            print("Task added successfully!")
+
+        elif choice == "2":  # Remove Task
+            title = input("Enter the title of the task to remove: ")
+            if todo_list.remove_task(title):
+                print("Task removed successfully!")
+            else:
+                print("Task not found.")
+
+        elif choice == "3":  # Complete Task
+            title = input("Enter the title of the task to complete: ")
+            if todo_list.complete_task(title):
+                print("Task marked as complete!")
+            else:
+                print("Task not found.")
+
+        elif choice == "4":  # Update Task
+            old_title = input("Enter the title of the task to update: ")
+            task = todo_list.get_task(old_title)
+            if not task:
+               print("Task not found.")
+               continue
+
+            print("Enter new values, or leave blank to keep the existing value.")
+            new_title = input(f"New title (current: {task.title}): ") or None
+            new_description = input(f"New description (current: {task.description}): ")
+            new_due_date_str = input(f"New due date (YYYY-MM-DD, current: {task.due_date.strftime('%Y-%m-%d') if task.due_date else 'None'}): ")
+            new_due_date = datetime.datetime.strptime(new_due_date_str, "%Y-%m-%d").date() if new_due_date_str else None
+            new_priority = input(f"New priority (High, Medium, Low, current: {task.priority}): ") or None
+            if new_priority:
+                new_priority = new_priority.capitalize()
+
+            new_category = input(f"New category (current: {task.category}): ") or None
+
+            if todo_list.update_task(old_title, new_title, new_description, new_due_date, new_priority, new_category):
+                print("Task updated successfully!")
+            else:
+                print("Task not found.")
+
+        elif choice == "5":  # List Tasks
+            sort_by = input("Sort by (due_date, priority, or leave blank for default): ").lower() or "due_date"
+            if sort_by not in ("due_date", "priority"):
+                print("Invalid sort option. Sorting by due date.")
+                sort_by = "due_date"  # Default
+
+            filter_completed_str = input("Filter by completed (true, false, or leave blank for none): ").lower()
+            filter_completed = None
+            if filter_completed_str == "true":
+                filter_completed = True
+            elif filter_completed_str == "false":
+                filter_completed = False
+
+            filter_category = input("Filter by category (or leave blank for none): ") or None
+
+            todo_list.list_tasks(sort_by, filter_completed, filter_category)
+
+        elif choice == "6":  # Get Task Details
+            title = input("Enter the title of the task to view: ")
+            task = todo_list.get_task(title)
+            if task:
+                print(task)
+            else:
+                print("Task not found.")
+
+
+        elif choice == "7":  # Save and Exit
+            print("Saving tasks and exiting...")
+            todo_list.save_tasks()
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
+
+if __name__ == "__main__":
+    main()
